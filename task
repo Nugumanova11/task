@@ -1,0 +1,82 @@
+#!/bin/bash
+
+# Function to show help message
+show_help() {
+    echo "Usage: topsize [--help] [-h] [-N] [-s minsize] [--] [dir...]"
+    echo
+    echo "  --help            Show this help message and exit"
+    echo "  -h                Output size in human-readable format"
+    echo "  -N                Number of largest files to show (default: all)"
+    echo "  -s minsize        Minimum file size to consider (default: 1 byte)"
+    echo "  dir...            Directories to search (default: current directory)"
+    exit 0
+}
+
+# Default values
+minsize=1
+nfiles=0
+human_readable=false
+dirs="."
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help)
+            show_help
+            ;;
+        -h)
+            human_readable=true
+            shift
+            ;;
+        -N)
+            nfiles=$2
+            shift 2
+            ;;
+        -s)
+            minsize=$2
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            dirs="$dirs $1"
+            shift
+            ;;
+    esac
+done
+
+# Check if the minsize is valid
+if ! [[ "$minsize" =~ ^[0-9]+$ ]] || [ "$minsize" -lt 1 ]; then
+    echo "Error: minsize must be a positive integer"
+    exit 1
+fi
+
+# Function to convert size to human-readable format if -h is used
+human_size() {
+    local size=$1
+    if $human_readable; then
+        echo "$(numfmt --to=iec $size)"
+    else
+        echo $size
+    fi
+}
+
+# Find files larger than minsize and sort them by size
+find $dirs -type f -size +"$minsize"c -exec stat --format="%s %n" {} \; |
+    sort -n -r |   # Sort by size in descending order
+    awk -v human=$human_readable '
+    {
+        size=$1
+        path=$2
+        if (human) {
+            size = size | 0
+            cmd = "numfmt --to=iec " size
+            cmd | getline size
+            close(cmd)
+        }
+        print size, path
+    }' |
+    # Limit output to N files, or show all files
+    { if [ "$nfiles" -gt 0 ]; then head -n $nfiles; else cat; fi }
